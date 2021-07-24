@@ -1,40 +1,51 @@
-from QUANTAXIS import QA_User, QA_Setting
 import pandas as pd
 from DataFetcher import MongoDataLoader
 from datetime import datetime
 
+from QUANTAXIS.example.RandomStock import RandomStockStrategy
+from QUANTAXIS.example.RandomStockAndTime import RandomStockAndTimeStrategy
 
-class Strategy:
 
-    def __init__(self, strategy_id='qtStrategy', start='2019-01-01', end='2019-10-21'):
-        self.strategy_id = strategy_id
+class StrategyExecutor:
+
+    def __init__(self, start='2019-01-01', end='2019-10-21'):
         self.start = start
         self.end = end
-        self.account = QA_User(username="admin", password='admin').new_portfolio().new_accountpro(
-            account_cookie=self.strategy_id, init_cash=20000, auto_reload=False)
+
         self.ct = 0
-        self.mongodbloader = MongoDataLoader()
+        self.mongodb_loader = MongoDataLoader()
+        self.strategy_list = []
 
     def run(self):
         # dts = pd.date_range(start=self.start, end=self.end, freq='D')
-        busdaysPd = self.mongodbloader.load_trade_cal()
-        busiday = pd.to_datetime(busdaysPd['cal_date'])[
-            (busdaysPd['cal_date'] >= self.start) & (busdaysPd['cal_date'] <= self.end)] \
-            .sort_values()
-        busiday.apply(self.move)
+        busdaysPd = self.mongodb_loader.load_trade_cal()
+        busidaySe = pd.to_datetime(busdaysPd['cal_date'])
+        busiday =busidaySe[(busidaySe >= self.start) & (busidaySe <= self.end)].sort_values()
+        busiday.apply(self.forward)
 
-    def move(self, item):
-        self.cal_ind(item)
-        self.make_decision(item)
-
-    def make_decision(self, item):
+    def forward(self, item):
         self.ct += 1
-        print(self.ct)
-        print(datetime.strftime(item, '%Y-%m-%d'))
+        # print(self.ct)
+        self.cal_ind(item)
+        # self.make_decision(item)
+        for st in self.strategy_list:
+            st.on_bar(item)
+
+    # def make_decision(self, item):
+    #     print(datetime.strftime(item, '%Y-%m-%d'))
 
     def cal_ind(self, item):
         pass
 
+    def addStrategy(self, item):
+        self.strategy_list.append(item)
+        return self
+
 
 if __name__ == '__main__':
-    Strategy(strategy_id='qtStrategy', start='2019-01-01', end='2019-12-31').run()
+    strategy = StrategyExecutor(start='2019-01-01', end='2019-12-31')
+    strategy.addStrategy(RandomStockAndTimeStrategy(context=strategy))
+    strategy.addStrategy(RandomStockStrategy(context=strategy))
+    strategy.run()
+
+

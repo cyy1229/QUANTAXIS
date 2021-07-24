@@ -1,6 +1,5 @@
-from QUANTAXIS import QA_Setting
+from QUANTAXIS import QA_fetch_stock_day_adv, QA_fetch_stock_list_adv, QA_fetch_stock_day_full_adv, QA_Setting
 import pandas as pd
-from QUANTAXIS.QAFetch.QAQuery_Advance import *
 
 QASETTING = QA_Setting()
 DATABASE = QASETTING.client.quantaxis
@@ -27,7 +26,7 @@ class MongoDataLoader:
     def load_trade_cal(self):
         return pd.DataFrame(DATABASE.trade_date.find({"is_open": 1}))
 
-    def load_stock_day_full(self,date):
+    def load_stock_day_full(self, date):
         return QA_fetch_stock_day_full_adv(date)
 
 
