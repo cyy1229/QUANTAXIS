@@ -83,6 +83,12 @@ class TsData:
             qdict['ts_code'] = code
         return pd.DataFrame(DATABASE.tushare_stock_info.find(qdict))
 
+    def query_index_list(self, code=None):
+        qdict = {}
+        if (code is not None):
+            qdict['ts_code'] = code
+        return pd.DataFrame(DATABASE.tushare_index_info.find(qdict))
+
     def get_stock_day_qfq(self, ts_code, start_date, end_date):
         return ts.pro_bar(ts_code=ts_code, adj='qfq', start_date=start_date, end_date=end_date, adjfactor=True,
                           freq="D")
@@ -120,7 +126,7 @@ class TsData:
             logger.info("get daily_basic_code = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
             DATABASE.tushare_baisc_daily.insert_many(QA_util_to_json_from_pandas(stock_baisc_daily))
 
-    def query_and_save_daily_basic_by_day(self, item):
+    def get_and_save_daily_basic_by_day(self, item):
         stock_code = item['ts_code']
         last_date = list(
             DATABASE.tushare_daily_basic.find({'ts_code': stock_code}).sort('trade_date', DESCENDING).limit(1))
@@ -165,19 +171,25 @@ class TsData:
                                                                                                         ASCENDING)]
 
 
-    def save_data_by_trade_date(self,dt):
-        '''根据交易日期保存数据'''
+
+    def save_by_trade_date_history(self):
+        '''根据交易日期获取并保存数据'''
+        for dt in self.query_before_all_trade_date(datetime.strftime(datetime.today(), "%Y%m%d")):
+            self.save_by_trade_date(dt)
+
+    def save_by_trade_date(self,dt):
         DATABASE.tushare_daily_basic.insert_many(QA_util_to_json_from_pandas(self.pro.daily_basic(trade_date=dt)))
         DATABASE.tushare_money_flow.insert_many(QA_util_to_json_from_pandas(self.pro.moneyflow(trade_date=dt)))
         DATABASE.tushare_limit_list.insert_many(QA_util_to_json_from_pandas(self.pro.limit_list(trade_date=dt)))
 
+    def save_one_time(self):
+        #TODO  20210729
+        DATABASE.tushare_daily_basic.insert_many(QA_util_to_json_from_pandas(self.pro.daily_basic(trade_date=dt)))
+        DATABASE.tushare_money_flow.insert_many(QA_util_to_json_from_pandas(self.pro.moneyflow(trade_date=dt)))
+        DATABASE.tushare_limit_list.insert_many(QA_util_to_json_from_pandas(self.pro.limit_list(trade_date=dt)))
 
-    def save_data_by_trade_date_history(self):
-        for item in self.query_before_all_trade_date(datetime.strftime(datetime.today(), "%Y%m%d")):
-            self.save_data_by_trade_date(item)
-
-
-
+    def save_every_day(self):
+        pass
 if __name__ == '__main__':
     # print(TsData())
     ts1 = TsData()
@@ -194,4 +206,4 @@ if __name__ == '__main__':
 
     # ts1.save_all_stock_day_history()
     # print(type(ts1.pro.daily_basic(trade_date='20210723')))
-    ts1.save_data_by_trade_date_history()
+    ts1.save_by_trade_date_history()

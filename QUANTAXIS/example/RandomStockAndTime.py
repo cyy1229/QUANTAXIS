@@ -6,7 +6,9 @@ from QUANTAXIS import QA_User
 class RandomStockAndTimeStrategy:
     def __init__(self, strategy_id='RandomStockAndTimeStrategy', context=None):
         self.strategy_id = strategy_id
-        cookie = self.__class__.__name__ + "|" + strategy_id + "|" + context.start + "|" + context.end + "|" + str(
+    def init(self,context):
+        self.context = context
+        cookie = self.__class__.__name__ + "|" + self.strategy_id + "|" + self.context.start + "|" + self.context.end + "|" + str(
             datetime.now())
         self.account = QA_User(username="admin", password='admin').new_portfolio(cookie).new_accountpro(
             account_cookie=self.strategy_id, init_cash=1000000, auto_reload=False)
