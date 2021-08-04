@@ -8,7 +8,7 @@ from QUANTAXIS.example.RandomStockAndTime import RandomStockAndTimeStrategy
 
 class StrategyExecutor:
 
-    def __init__(self, start='2019-01-01', end='2019-10-21'):
+    def __init__(self, start='2019-01-01', end='2021-06-30'):
 
         self.strategy_list = []
 
@@ -18,6 +18,7 @@ class StrategyExecutor:
         self.mongodb_loader = self.context.mongodb_loader
         self.context.start = start
         self.context.end = end
+
     def execute(self):
         # dts = pd.date_range(start=self.start, end=self.end, freq='D')
         busdaysPd = self.mongodb_loader.load_trade_cal()
@@ -28,6 +29,8 @@ class StrategyExecutor:
     def forward(self, item):
         self.context.ct += 1
         self.context_cal_ind(item)
+
+        self.context._stock_day_df = self.mongodb_loader.load_stock_day()
         for st in self.strategy_list:
             st.on_bar(item)
 

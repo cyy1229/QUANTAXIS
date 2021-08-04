@@ -29,6 +29,14 @@ class MongoDataLoader:
     def load_stock_day_full(self, date):
         return QA_fetch_stock_day_full_adv(date)
 
+    '''根据日期范围加载tushare日线数据'''
+
+    def load_tushare_stock_day(self, end, start='20150101'):
+        return pd.DataFrame(DATABASE.tushare_stock_day.find({"trade_date": {
+                    "$lte": end,
+                    "$gte": start
+                }}))
+
 
 if __name__ == '__main__':
-    print(MongoDataLoader().load_trade_cal())
+    print(MongoDataLoader().load_tushare_stock_day(end='20210630'))
