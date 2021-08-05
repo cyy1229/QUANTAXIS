@@ -81,7 +81,7 @@ class QA_Tdx_Executor(QA_Thread):
         _time = datetime.datetime.now()
         # print(self.timeout)
         try:
-            with api.connect(ip, port, time_out=1):
+            with api.connect(ip, port,):
                 res = api.get_security_list(0, 1)
                 # print(res)
                 # print(len(res))
