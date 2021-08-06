@@ -18,7 +18,7 @@ DATABASE = QASETTING.client.quantaxis
 class TsData:
     def __init__(self, truncate=False):
         if truncate:
-            logger.warn("重新创建collection！")
+            logger.info("重新创建collection！")
             self.tuncatate_collections()
             self._create_collections()
 
@@ -27,8 +27,11 @@ class TsData:
             logger.error("获取tushare的token失败！")
             raise RuntimeError("获取tushare的token失败！")
         ts.set_token(token)
-        self.pro = ts.pro_api(token)
+        self.pro = ts.pro_api(token, timeout=30000)
         print("ts_version %s" % ts.__version__)
+
+        # if truncate:
+        #     self.get_and_save_trade_calendar()
 
         self.stock_loop_count = 0
         self.stock_total_count = 0
@@ -580,27 +583,27 @@ class TsData:
 
     def save_init_1(self):
         logger.info("start 初始化历史数据")
-        # '''股票列表'''
-        # self.get_and_save_stock_list()
-        # stock_list_df = self.query_stock_list()
-        # '''个股相关的信息'''
-        # self.stock_total_count = stock_list_df.shape[0]
-        # stock_list_df.apply(self._query_and_save_stock_day, axis=1)
-        #
-        # '''指数列表'''
-        # self.get_and_save_index_list()
-        # index_list_df = self.query_index_list()
-        # self.stock_total_count = index_list_df.shape[0]
-        # index_list_df.apply(self._query_and_save_index_day, axis=1)
-        #
-        # '''同花顺概念和行业指数'''
-        # self.get_and_save_ths_index()
-        # ths_index_list_df = self.query_ths_index_list()
-        # self.stock_total_count = ths_index_list_df.shape[0]
-        # ths_index_list_df.apply(self._query_and_save_ths_index_day, axis=1)
+        '''股票列表'''
+        self.get_and_save_stock_list()
+        stock_list_df = self.query_stock_list()
+        '''个股相关的信息'''
+        self.stock_total_count = stock_list_df.shape[0]
+        stock_list_df.apply(self._query_and_save_stock_day, axis=1)
+
+        '''指数列表'''
+        self.get_and_save_index_list()
+        index_list_df = self.query_index_list()
+        self.stock_total_count = index_list_df.shape[0]
+        index_list_df.apply(self._query_and_save_index_day, axis=1)
+
+        '''同花顺概念和行业指数'''
+        self.get_and_save_ths_index()
+        ths_index_list_df = self.query_ths_index_list()
+        self.stock_total_count = ths_index_list_df.shape[0]
+        ths_index_list_df.apply(self._query_and_save_ths_index_day, axis=1)
 
         '''申万行业分类'''
-        # self.get_and_save_sw_index_classify()
+        self.get_and_save_sw_index_classify()
 
         '''整体数据，按照交易日获取的'''
         self._save_init_dailys()
@@ -652,5 +655,6 @@ if __name__ == '__main__':
     # df = ts1.pro.fina_indicator(ts_code = '000001.SZ', start_date=ts1._start_date_str, end_date=ts1._today_date_str)
     # print(df)
     #
-    ts1 = TsData()
+    ts1 = TsData(True)
+
     ts1.save_init_1()
