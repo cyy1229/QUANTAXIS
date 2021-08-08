@@ -9,9 +9,9 @@ import traceback
 from loguru import logger
 from pymongo import ASCENDING, DESCENDING
 
-from QUANTAXIS import QA_util_to_json_from_pandas
 from QUANTAXIS.QAUtil import QASETTING
 import time
+
 DATABASE = QASETTING.client.quantaxis
 
 
@@ -36,13 +36,10 @@ class TsData:
         self.stock_loop_count = 0
         self.stock_total_count = 0
 
-        self._today_date_str = datetime.strftime(datetime.today(), "%Y%m%d")
-        last_trade_date = query_last_trade_date(self._today_date_str)
-        if self._today_date_str > last_trade_date:
-            self._today_date_str = last_trade_date
+        self._today_date_str = query_last_trade_date(datetime.strftime(datetime.today(), "%Y%m%d"))
 
-        initStart = '20141231'
-        self._start_date_str = query_next_trade_date(initStart)
+        self.initStart = '20141231'
+        self._start_date_str = query_next_trade_date(self.initStart)
         if not self._start_date_str:
             self._start_date_str = '20141231'
 
@@ -239,11 +236,11 @@ class TsData:
         #     DATABASE.tushare_fund_adj.create_index([("ts_code", ASCENDING), ("trade_date", ASCENDING)], unique=True)
         #
 
-        '''交易日历'''
-        if "trade_date" not in DATABASE.list_collection_names():
-            coll = DATABASE.trade_date
-            coll.create_index([("cal_date",
-                                ASCENDING)], unique=True)
+        # '''交易日历'''
+        # if "trade_date" not in DATABASE.list_collection_names():
+        #     coll = DATABASE.trade_date
+        #     coll.create_index([("cal_date",
+        #                         ASCENDING)], unique=True)
 
     def tuncatate_collections(self):
         for i in DATABASE.list_collection_names():
@@ -262,7 +259,7 @@ class TsData:
         df_tuishi = self.pro.stock_basic(list_status='D',
                                          fields='ts_code,symbol,name,area,industry,list_date,market,list_status,is_hs')
         df_zanting = self.pro.stock_basic(list_status='P',
-                                      fields='ts_code,symbol,name,area,industry,list_date,market,list_status,is_hs')
+                                          fields='ts_code,symbol,name,area,industry,list_date,market,list_status,is_hs')
 
         df = df.append(df_tuishi)
         df = df.append(df_zanting)
@@ -274,7 +271,6 @@ class TsData:
                 logger.error("get tushare stock_info error")
         except:
             pass
-
 
     def get_and_save_index_list(self):
         '''指数列表'''
@@ -347,6 +343,39 @@ class TsData:
     #     else:
     #         logger.error("get tushare ths_member error")
 
+    def save_by_code_date(self, stock, func, colleciton_name):
+        try:
+            stock_code = stock['ts_code']
+            cursorname = colleciton_name + "-" + stock_code
+            dt = self.readCursor(cursorname)
+            start_date = query_next_trade_date(dt) if dt else stock["list_date"]
+            start_date = self.initStart if start_date <= self.initStart else start_date
+            if start_date <= self._today_date_str:
+                res = func(ts_code=stock_code, start_date=start_date, end_date=self._today_date_str)
+                logger.info("get {} = {}, from {} to {}".format(colleciton_name, stock_code, start_date, self._today_date_str))
+                if not res.empty:
+                    DATABASE[colleciton_name].insert_many(QA_util_to_json_from_pandas(res))
+                self.writeCursor(cursorname, self._today_date_str)
+        except Exception as e:
+            logger.warning("ERROR get {} = {}, from {} to {}".format(colleciton_name, stock_code, start_date, self._today_date_str))
+            traceback.print_exc()
+
+    def save_by_code(self, stock, func, colleciton_name):
+        try:
+            stock_code = stock['ts_code']
+            cursorname = colleciton_name + "-" + stock_code
+            dt = self.readCursor(cursorname)
+            start_date = query_next_trade_date(dt) if dt else self.initStart
+            if start_date <= self._today_date_str:
+                res = func(ts_code=stock_code)
+                logger.info("get {} = {}".format(colleciton_name, stock_code))
+                if not res.empty:
+                    DATABASE[colleciton_name].insert_many(QA_util_to_json_from_pandas(res))
+                self.writeCursor(cursorname, self._today_date_str)
+        except Exception as e:
+            logger.warning("ERROR get {} = {}".format(colleciton_name, stock_code))
+            traceback.print_exc()
+
     def _query_and_save_stock_day(self, item):
         '''
             保存个股相关的每日信息
@@ -362,130 +391,45 @@ class TsData:
             last_date = self._start_date_str
             if last_date < item['list_date']:
                 last_date = item['list_date']
+            ipo_date = item['list_date']  # Initial public offering
 
+            default_start_date = self._start_date_str if ipo_date < self._start_date_str else ipo_date
             # dt = self.readCursor(self.__class__.__name__+sys._getframe().f_code.co_name+"-"+stock_code)
             # if dt and dt > last_date:
             #     last_date = dt
-            dt = DATABASE.tushare_stock_info.find_one({"ts_code": stock_code})
-            if dt and dt.__contains__("stock_cursor_dt") and dt["stock_cursor_dt"] > last_date:
-                last_date = query_next_trade_date(dt)
 
+            logger.info("stock {}/{}", self.stock_loop_count, self.stock_total_count)
+            dt = self.readCursor("tushare_stock_day" + "-" + stock_code)
+            last_date = query_next_trade_date(dt) if dt else default_start_date
             if last_date <= self._today_date_str:
-                logger.info("stock {}/{}", self.stock_loop_count, self.stock_total_count)
-
                 '''个股日线数据'''
-                stock_day_data = ts.pro_bar(ts_code=stock_code, adj='qfq', start_date=last_date,
-                                            end_date=self._today_date_str, adjfactor=True,
-                                            freq="D")
-                logger.info(
-                    "get stock_day_code = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
+                stock_day_data = ts.pro_bar(ts_code=stock_code, adj='qfq', start_date=last_date, end_date=self._today_date_str, adjfactor=True, freq="D")
+                logger.info("get stock_day_code = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
                 DATABASE.tushare_stock_day.insert_many(QA_util_to_json_from_pandas(stock_day_data))
+                self.writeCursor("tushare_stock_day" + "-" + stock_code, self._today_date_str)
 
-                '''个股基础指标'''
-                stock_baisc_daily = self.pro.daily_basic(ts_code=stock_code, start_date=last_date,
-                                                         end_date=self._today_date_str)
-                logger.info(
-                    "get daily_basic_code = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_baisc_daily.insert_many(QA_util_to_json_from_pandas(stock_baisc_daily))
+            self.save_by_code_date(item, self.pro.daily_basic, "tushare_baisc_daily")
+            self.save_by_code_date(item, self.pro.moneyflow, "tushare_moneyflow")
+            self.save_by_code_date(item, self.pro.limit_list, "tushare_limit_list")
+            self.save_by_code_date(item, self.pro.stk_limit, "tushare_stk_limit")
+            self.save_by_code_date(item, self.pro.margin_detail, "tushare_margin_detail")  # '''融资融券交易明细'''
+            self.save_by_code_date(item, self.pro.top10_holders, "tushare_top10_holders")  # '''前十大股东'''
+            self.save_by_code_date(item, self.pro.top10_floatholders, "tushare_top10_floatholders")  # '''前十大流通股东'''
+            self.save_by_code_date(item, self.pro.stk_managers, "tushare_stk_managers")  # 上市公司管理层
+            self.save_by_code_date(item, self.pro.fina_indicator, "tushare_fina_indicator")  # '''财务指标数据'''
+            self.save_by_code_date(item, self.pro.cashflow, "tushare_cashflow")
+            self.save_by_code_date(item, self.pro.balancesheet, "tushare_moneyflow")  # '''资产负债'''
+            self.save_by_code_date(item, self.pro.income, "tushare_income")  # 利润表
+            self.save_by_code_date(item, self.pro.fina_mainbz, "tushare_fina_mainbz")  # 主营业务构成
+            self.save_by_code_date(item, self.pro.stk_holdernumber, "tushare_stk_holdernumber")  # 上市公司股东户数
 
-                '''个股资金流向'''
-                money_flow = self.pro.moneyflow(ts_code=stock_code, start_date=last_date, end_date=self._today_date_str)
-                logger.info("get money_flow = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_money_flow.insert_many(QA_util_to_json_from_pandas(money_flow))
+            self.save_by_code(item, self.pro.stk_rewards, "tushare_stk_rewards")  # 上市公司管理层薪酬
+            # self.save_by_code(item, self.pro.stock_company, "tushare_stock_company")  # 市公司基本信息
 
-                '''每日涨跌停统计'''
-                limit_list = self.pro.limit_list(ts_code=stock_code, start_date=last_date,
-                                                 end_date=self._today_date_str)
-                logger.info("get limit_list = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_limit_list.insert_many(QA_util_to_json_from_pandas(limit_list))
-
-                '''每日涨跌停价格'''
-                stk_limit = self.pro.stk_limit(ts_code=stock_code, start_date=last_date, end_date=self._today_date_str)
-                logger.info("get stk_limit = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_stk_limit.insert_many(QA_util_to_json_from_pandas(stk_limit))
-
-                '''融资融券交易明细'''
-                margin_detail = self.pro.margin_detail(ts_code=stock_code, start_date=last_date,
-                                                       end_date=self._today_date_str)
-                logger.info("get margin_detail = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                if not margin_detail.empty:
-                    DATABASE.tushare_margin_detail.insert_many(QA_util_to_json_from_pandas(margin_detail))
-
-                '''前十大股东'''
-                top10_holders = self.pro.top10_holders(ts_code=stock_code, start_date=last_date,
-                                                       end_date=self._today_date_str)
-                logger.info("get top10_holders = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_top10_holders.insert_many(QA_util_to_json_from_pandas(top10_holders))
-
-                '''前十大流通股东'''
-                top10_floatholders = self.pro.top10_floatholders(ts_code=stock_code, start_date=last_date,
-                                                                 end_date=self._today_date_str)
-                logger.info(
-                    "get top10_floatholders = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_top10_floatholders.insert_many(QA_util_to_json_from_pandas(top10_floatholders))
-
-                '''上市公司管理层'''
-                stk_managers = self.pro.stk_managers(ts_code=stock_code, start_date=last_date,
-                                                     end_date=self._today_date_str)
-                logger.info("get stk_managers = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_stk_managers.insert_many(QA_util_to_json_from_pandas(stk_managers))
-
-                '''财务指标数据'''
-                fina_indicator = self.pro.fina_indicator(ts_code=stock_code, start_date=last_date,
-                                                         end_date=self._today_date_str)
-                logger.info(
-                    "get fina_indicator = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_fina_indicator.insert_many(QA_util_to_json_from_pandas(fina_indicator))
-
-                '''现金流量表'''
-                cashflow = self.pro.cashflow(ts_code=stock_code, start_date=last_date,
-                                             end_date=self._today_date_str)
-                logger.info("get cashflow = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_cashflow.insert_many(QA_util_to_json_from_pandas(cashflow))
-
-                '''资产负债'''
-                balancesheet = self.pro.balancesheet(ts_code=stock_code, start_date=last_date,
-                                                     end_date=self._today_date_str)
-                logger.info("get balancesheet = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_balancesheet.insert_many(QA_util_to_json_from_pandas(balancesheet))
-
-                '''利润表'''
-                income = self.pro.income(ts_code=stock_code, start_date=last_date,
-                                         end_date=self._today_date_str)
-                logger.info("get income = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_income.insert_many(QA_util_to_json_from_pandas(income))
-
-                '''主营业务构成'''
-                fina_mainbz = self.pro.fina_mainbz(ts_code=stock_code, start_date=last_date,
-                                                   end_date=self._today_date_str)
-                logger.info("get fina_mainbz = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_fina_mainbz.insert_many(QA_util_to_json_from_pandas(fina_mainbz))
-
-                '''上市公司股东户数'''
-                stk_holdernumber = self.pro.stk_holdernumber(ts_code=stock_code, start_date=self._start_date_str,
-                                                             end_date=self._today_date_str)
-                logger.info("get stk_holdernumber = from {} to {}".format(self._start_date_str, self._today_date_str))
-                DATABASE.tushare_stk_holdernumber.insert_many(QA_util_to_json_from_pandas(stk_holdernumber))
-
-            '''不需要cursor信息的数据'''
-            '''上市公司管理层薪酬'''
-            stk_rewards = self.pro.stk_rewards(ts_code=stock_code)
-            logger.info("get stk_rewards = {}".format(stock_code))
-            DATABASE.tushare_stk_rewards.insert_many(QA_util_to_json_from_pandas(stk_rewards))
-
-            '''上市公司基本信息'''
-            stock_company = ts.pro_bar(ts_code=stock_code)
-            logger.info("get stock_company = {}".format(stock_code))
-            DATABASE.tushare_stock_company.insert_many(QA_util_to_json_from_pandas(stock_company))
-
-            DATABASE.tushare_stock_info.update_one({"ts_code": stock_code}, {'$set': {'stock_cursor_dt': self._today_date_str}}, True)
 
         except Exception as e:
-            logger.info(
-                "stock get history error = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
+            logger.warning("stock get history error = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
             traceback.print_exc()
-
-
 
     def _query_and_save_index_day(self, item):
         '''
@@ -496,41 +440,11 @@ class TsData:
         Returns:
 
         '''
-        try:
-            self.stock_loop_count += 1
-            stock_code = item['ts_code']
-            last_date = self._start_date_str
-            if last_date < item['list_date']:
-                last_date = item['list_date']
+        self.stock_loop_count += 1
+        self.save_by_code_date(item, self.pro.index_daily, "tushare_index_day")
+        self.save_by_code_date(item, self.pro.index_weight, "tushare_index_weight")
+        self.save_by_code_date(item, self.pro.index_dailybasic, "tushare_index_dailybasic")
 
-            if last_date <= self._today_date_str:
-                logger.info("index：{}/{}", self.stock_loop_count, self.stock_total_count)
-
-                '''指标日线数据'''
-                tushare_index_day = self.pro.index_daily(ts_code=stock_code, start_date=last_date,
-                                                         end_date=self._today_date_str)
-
-                logger.info(
-                    "get index_day code = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_index_day.insert_many(QA_util_to_json_from_pandas(tushare_index_day))
-
-                '''指标成分权重'''
-                index_weight = self.pro.index_weight(index_code=stock_code, start_date=last_date,
-                                                     end_date=self._today_date_str)
-                logger.info(
-                    "get index_weight code = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_index_weight.insert_many(QA_util_to_json_from_pandas(index_weight))
-
-                '''指数每日指标，目前只提供上证综指，深证成指，上证50，中证500，中小板指，创业板指的每日指标数据'''
-                index_dailybasic = self.pro.index_dailybasic(ts_code=stock_code, start_date=last_date,
-                                                             end_date=self._today_date_str)
-                logger.info(
-                    "get index_dailybasic = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                if not index_dailybasic.empty:
-                    DATABASE.tushare_index_dailybasic.insert_many(QA_util_to_json_from_pandas(index_dailybasic))
-        except Exception as e:
-            logger.info(
-                "index get history error = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
 
     def _query_and_save_ths_index_day(self, item):
         '''
@@ -545,26 +459,31 @@ class TsData:
             self.stock_loop_count += 1
             stock_code = item['ts_code']
             last_date = self._start_date_str
-            if last_date < item['list_date']:
-                last_date = item['list_date']
+
+            ipo_date = item['list_date']  # Initial public offering
+            default_start_date = self._start_date_str if ipo_date < self._start_date_str else ipo_date
+
+            dt = self.readCursor("ths_daily" + "-" + stock_code)
+            last_date = dt if dt else default_start_date
 
             if last_date <= self._today_date_str:
                 logger.info("index：{}/{}", self.stock_loop_count, self.stock_total_count)
 
-                '''指标日线数据'''
+                '''褪黑素指标日线数据'''
                 ths_daily = self.pro.ths_daily(ts_code=stock_code, start_date=last_date,
                                                end_date=self._today_date_str)
                 logger.info(
                     "get ths_daily code = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
-                DATABASE.tushare_index_day.insert_many(QA_util_to_json_from_pandas(ths_daily))
-
+                DATABASE.tushare_ths_daily.insert_many(QA_util_to_json_from_pandas(ths_daily))
+                self.writeCursor("tushare_ths_daily" + "-" + stock_code, self._today_date_str)
             '''指标成分权重,需要5000积分暂时没有权限'''
             # ths_member = self.pro.ths_member(ts_code=stock_code)
             # logger.info("get ths_member code = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
             # DATABASE.tushare_ths_member.insert_many(QA_util_to_json_from_pandas(ths_member))
+
         except Exception as e:
-            logger.info(
-                "ths_index get history error = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
+            logger.warning("ths_index get history error = {}, from {} to {}".format(stock_code, last_date, self._today_date_str))
+            traceback.print_exc()
 
     # '''
     #     1、股票代码
@@ -594,12 +513,14 @@ class TsData:
         self.get_and_save_index_list()
         index_list_df = self.query_index_list()
         self.stock_total_count = index_list_df.shape[0]
+        self.stock_loop_count = 0
         index_list_df.apply(self._query_and_save_index_day, axis=1)
 
         '''同花顺概念和行业指数'''
         self.get_and_save_ths_index()
         ths_index_list_df = self.query_ths_index_list()
         self.stock_total_count = ths_index_list_df.shape[0]
+        self.stock_loop_count = 0
         ths_index_list_df.apply(self._query_and_save_ths_index_day, axis=1)
 
         '''申万行业分类'''
@@ -615,19 +536,24 @@ class TsData:
         # DATABASE.tushare_margin.insert_many(QA_util_to_json_from_pandas(margin))
 
         '''按日期循环获取'''
-        for dt in query_trade_dates(self._start_date_str, self._today_date_str):
+        tradedate = self.readCursor("tushare_get_by_date")
+        tradedate = query_next_trade_date(tradedate if tradedate else self._start_date_str)
+        while tradedate <= self._today_date_str:
             time.sleep(0.1)
             '''龙虎榜每日明细'''
-            top_list = self.pro.top_list(trade_date=dt)
-            logger.info("get top_list dt = {}".format(dt))
+            top_list = self.pro.query_trade_dates(trade_date=tradedate)
+            logger.info("get top_list dt = {}".format(tradedate))
             if not top_list.empty:
                 DATABASE.tushare_top_list.insert_many(QA_util_to_json_from_pandas(top_list))
+
             # if dt > '20180101':
             '''龙虎榜机构明细'''
-            top_inst = self.pro.top_inst(trade_date=dt)
-            logger.info("get top_inst dt = {}".format(dt))
+            top_inst = self.pro.top_inst(trade_date=tradedate)
+            logger.info("get top_inst dt = {}".format(tradedate))
             if not top_inst.empty:
                 DATABASE.tushare_top_inst.insert_many(QA_util_to_json_from_pandas(top_inst))
+            self.writeCursor("tushare_get_by_date", tradedate)
+            tradedate = query_next_trade_date(tradedate)
 
 
 if __name__ == '__main__':
@@ -655,6 +581,5 @@ if __name__ == '__main__':
     # df = ts1.pro.fina_indicator(ts_code = '000001.SZ', start_date=ts1._start_date_str, end_date=ts1._today_date_str)
     # print(df)
     #
-    ts1 = TsData(True)
-
+    ts1 = TsData()
     ts1.save_init_1()
