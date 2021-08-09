@@ -351,7 +351,7 @@ class TsData:
             start_date = query_next_trade_date(dt) if dt else stock["list_date"]
             start_date = self.initStart if start_date <= self.initStart else start_date
             if start_date <= self._today_date_str:
-                res = func(ts_code=stock_code, start_date=start_date, end_date=self._today_date_str)
+                res = func(ts_code=stock_code, start_date=start_date, end_date=self._today_date_str,index_code=stock_code)
                 logger.info("get {} = {}, from {} to {}".format(colleciton_name, stock_code, start_date, self._today_date_str))
                 if not res.empty:
                     DATABASE[colleciton_name].insert_many(QA_util_to_json_from_pandas(res))
@@ -441,6 +441,7 @@ class TsData:
 
         '''
         self.stock_loop_count += 1
+        logger.info("stock {}/{}", self.stock_loop_count, self.stock_total_count)
         self.save_by_code_date(item, self.pro.index_daily, "tushare_index_day")
         self.save_by_code_date(item, self.pro.index_weight, "tushare_index_weight")
         self.save_by_code_date(item, self.pro.index_dailybasic, "tushare_index_dailybasic")
@@ -503,25 +504,25 @@ class TsData:
     def save_init_1(self):
         logger.info("start 初始化历史数据")
         '''股票列表'''
-        self.get_and_save_stock_list()
-        stock_list_df = self.query_stock_list()
-        '''个股相关的信息'''
-        self.stock_total_count = stock_list_df.shape[0]
-        stock_list_df.apply(self._query_and_save_stock_day, axis=1)
+        # self.get_and_save_stock_list()
+        # stock_list_df = self.query_stock_list()
+        # '''个股相关的信息'''
+        # self.stock_total_count = stock_list_df.shape[0]
+        # stock_list_df.apply(self._query_and_save_stock_day, axis=1)
 
         '''指数列表'''
-        self.get_and_save_index_list()
-        index_list_df = self.query_index_list()
-        self.stock_total_count = index_list_df.shape[0]
-        self.stock_loop_count = 0
-        index_list_df.apply(self._query_and_save_index_day, axis=1)
+        # self.get_and_save_index_list()
+        # index_list_df = self.query_index_list()
+        # self.stock_total_count = index_list_df.shape[0]
+        # self.stock_loop_count = 0
+        # index_list_df.apply(self._query_and_save_index_day, axis=1)
 
         '''同花顺概念和行业指数'''
-        self.get_and_save_ths_index()
-        ths_index_list_df = self.query_ths_index_list()
-        self.stock_total_count = ths_index_list_df.shape[0]
-        self.stock_loop_count = 0
-        ths_index_list_df.apply(self._query_and_save_ths_index_day, axis=1)
+        # self.get_and_save_ths_index()
+        # ths_index_list_df = self.query_ths_index_list()
+        # self.stock_total_count = ths_index_list_df.shape[0]
+        # self.stock_loop_count = 0
+        # ths_index_list_df.apply(self._query_and_save_ths_index_day, axis=1)
 
         '''申万行业分类'''
         self.get_and_save_sw_index_classify()
